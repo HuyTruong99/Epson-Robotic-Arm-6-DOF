@@ -1,0 +1,568 @@
+import socket
+import csv
+from datetime import datetime
+from pathlib import Path
+
+
+ROBOT_IP = "192.168.1.6"
+PORT = 2000
+
+CSV_FILE = Path.home() / "robot_position.csv"
+
+
+# =========================================================
+# FIND AVAILABLE CSV FILE
+# =========================================================
+
+def get_csv_file():
+
+    try:
+        with open(CSV_FILE, "a", newline="", encoding="utf-8"):
+            pass
+
+        return CSV_FILE
+
+    except PermissionError:
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        new_file = Path.home() / f"robot_position_{timestamp}.csv"
+
+        print()
+        print("WARNING: robot_position.csv is locked.")
+        print("Close Excel if it is open.")
+        print()
+        print("Using new CSV file:")
+        print(new_file)
+
+        return new_file
+
+
+csv_path = get_csv_file()
+
+
+# =========================================================
+# CONNECT
+# =========================================================
+
+print()
+print("======================================")
+print("     EPSON LIVE ROBOT CONTROLLER")
+print("======================================")
+print()
+
+print("Connecting to Epson robot...")
+print("Robot IP:", ROBOT_IP)
+print("Port:", PORT)
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+try:
+
+    sock.connect((ROBOT_IP, PORT))
+
+except Exception as e:
+
+    print()
+    print("Could not connect to RC+.")
+    print("Error:", e)
+    print()
+    print("Make sure the RC+ program is running first.")
+
+    raise SystemExit
+
+
+print()
+print("CONNECTED!")
+print()
+
+print("IMPORTANT - CSV FILE BEING USED:")
+print(csv_path)
+print()
+
+
+# =========================================================
+# CSV
+# =========================================================
+
+file_exists = csv_path.exists()
+
+with open(
+    csv_path,
+    "a",
+    newline="",
+    encoding="utf-8"
+) as f:
+
+    writer = csv.writer(f)
+
+    if not file_exists or csv_path.stat().st_size == 0:
+
+        writer.writerow(
+            [
+                "timestamp",
+                "event",
+                "command",
+                "X",
+                "Y",
+                "Z",
+                "U",
+                "V",
+                "W"
+            ]
+        )
+
+        f.flush()
+
+
+    # =====================================================
+    # NETWORK BUFFER
+    # =====================================================
+
+    buffer = ""
+
+
+    def receive_line():
+
+        global buffer
+
+        while "\r\n" not in buffer:
+
+            data = sock.recv(1024)
+
+            if not data:
+                return None
+
+            buffer += data.decode(
+                "ascii",
+                errors="replace"
+            )
+
+        line, buffer = buffer.split("\r\n", 1)
+
+        return line.strip()
+
+
+    # =====================================================
+    # SAVE POSITION
+    # =====================================================
+
+    def save_position(event_name, command, parts):
+
+        timestamp = datetime.now().isoformat(
+            timespec="milliseconds"
+        )
+
+        x = parts[1]
+        y = parts[2]
+        z = parts[3]
+        u = parts[4]
+        v = parts[5]
+        w = parts[6]
+
+        writer.writerow(
+            [
+                timestamp,
+                event_name,
+                command,
+                x,
+                y,
+                z,
+                u,
+                v,
+                w
+            ]
+        )
+
+        f.flush()
+
+        print()
+        print("--------------------------------")
+        print(event_name)
+        print("--------------------------------")
+        print("X =", x)
+        print("Y =", y)
+        print("Z =", z)
+        print("U =", u)
+        print("V =", v)
+        print("W =", w)
+        print("--------------------------------")
+        print("SAVED TO CSV")
+        print()
+
+
+    # =====================================================
+    # GET POSITION
+    # =====================================================
+
+    def get_position(event_name, command):
+
+        sock.sendall(b"POS\r\n")
+
+        while True:
+
+            line = receive_line()
+
+            if line is None:
+                return False
+
+            if not line:
+                continue
+
+            print("RC+ >", line)
+
+            parts = [
+                item.strip()
+                for item in line.split(",")
+            ]
+
+            if parts[0] == "POS" and len(parts) >= 7:
+
+                save_position(
+                    event_name,
+                    command,
+                    parts
+                )
+
+                return True
+
+
+    # =====================================================
+    # WAIT FOR MOVEMENT
+    # =====================================================
+
+    def wait_for_movement(command):
+
+        while True:
+
+            line = receive_line()
+
+            if line is None:
+
+                print("RC+ connection closed.")
+
+                return False
+
+            if not line:
+                continue
+
+            print("RC+ >", line)
+
+            parts = [
+                item.strip()
+                for item in line.split(",")
+            ]
+
+            event = parts[0]
+
+            timestamp = datetime.now().isoformat(
+                timespec="milliseconds"
+            )
+
+
+            # ---------------------------------------------
+            # MOVEMENT START
+            # ---------------------------------------------
+
+            if event == "START":
+
+                direction = (
+                    parts[1]
+                    if len(parts) > 1
+                    else command
+                )
+
+                distance = (
+                    parts[2]
+                    if len(parts) > 2
+                    else ""
+                )
+
+                print()
+                print("================================")
+                print("ROBOT MOVEMENT STARTED")
+                print("Direction:", direction)
+                print("Distance :", distance, "mm")
+                print("================================")
+                print()
+
+                writer.writerow(
+                    [
+                        timestamp,
+                        "MOVE_START",
+                        command,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        ""
+                    ]
+                )
+
+                f.flush()
+
+
+            # ---------------------------------------------
+            # MOVEMENT FINISHED
+            # ---------------------------------------------
+
+            elif event == "DONE":
+
+                x = parts[1] if len(parts) > 1 else ""
+                y = parts[2] if len(parts) > 2 else ""
+                z = parts[3] if len(parts) > 3 else ""
+                u = parts[4] if len(parts) > 4 else ""
+                v = parts[5] if len(parts) > 5 else ""
+                w = parts[6] if len(parts) > 6 else ""
+
+                writer.writerow(
+                    [
+                        timestamp,
+                        "MOVE_DONE",
+                        command,
+                        x,
+                        y,
+                        z,
+                        u,
+                        v,
+                        w
+                    ]
+                )
+
+                f.flush()
+
+                print()
+                print("================================")
+                print("MOVEMENT COMPLETE")
+                print("================================")
+                print("X =", x)
+                print("Y =", y)
+                print("Z =", z)
+                print("================================")
+
+                return True
+
+
+            # ---------------------------------------------
+            # TARGET NOT REACHABLE
+            # ---------------------------------------------
+
+            elif event == "TARGET_NOT_OK":
+
+                print()
+                print("TARGET NOT REACHABLE.")
+                print("Robot did not move.")
+                print()
+
+                writer.writerow(
+                    [
+                        timestamp,
+                        "TARGET_NOT_OK",
+                        command,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        ""
+                    ]
+                )
+
+                f.flush()
+
+                return False
+
+
+            # ---------------------------------------------
+            # ROBOT ERROR
+            # ---------------------------------------------
+
+            elif event == "ERROR":
+
+                print()
+                print("RC+ ERROR:")
+                print(line)
+
+                writer.writerow(
+                    [
+                        timestamp,
+                        "ERROR",
+                        command,
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        line
+                    ]
+                )
+
+                f.flush()
+
+                return False
+
+
+    # =====================================================
+    # STARTING POSITION
+    # =====================================================
+
+    print("Getting starting robot position...")
+
+    get_position(
+        "START_POSITION",
+        "START"
+    )
+
+
+    # =====================================================
+    # LIVE CONTROL
+    # =====================================================
+
+    while True:
+
+        print()
+        print("======================================")
+        print("        EPSON LIVE CONTROL")
+        print("======================================")
+        print()
+        print(" LEFT   = move -100 mm X")
+        print(" RIGHT  = move +100 mm X")
+        print(" POS    = save current position")
+        print(" QUIT   = exit")
+        print()
+        print("======================================")
+
+        command = input(
+            "COMMAND > "
+        ).strip().upper()
+
+        print()
+
+
+        # =================================================
+        # QUIT
+        # =================================================
+
+        if command == "QUIT":
+
+            print("Closing program...")
+
+            break
+
+
+        # =================================================
+        # POS
+        # =================================================
+
+        elif command == "POS":
+
+            print("Reading current position...")
+
+            get_position(
+                "POSITION",
+                "POS"
+            )
+
+
+        # =================================================
+        # LEFT
+        # =================================================
+
+        elif command == "LEFT":
+
+            print()
+            print("Reading position BEFORE LEFT movement...")
+
+            get_position(
+                "BEFORE_MOVE",
+                "LEFT"
+            )
+
+            print("Sending LEFT command...")
+            print("Requested movement = -100 mm X")
+
+            sock.sendall(
+                b"LEFT\r\n"
+            )
+
+            moved = wait_for_movement(
+                "LEFT"
+            )
+
+            if moved:
+
+                print()
+                print("Reading position AFTER LEFT movement...")
+
+                get_position(
+                    "AFTER_MOVE",
+                    "LEFT"
+                )
+
+
+        # =================================================
+        # RIGHT
+        # =================================================
+
+        elif command == "RIGHT":
+
+            print()
+            print("Reading position BEFORE RIGHT movement...")
+
+            get_position(
+                "BEFORE_MOVE",
+                "RIGHT"
+            )
+
+            print("Sending RIGHT command...")
+            print("Requested movement = +100 mm X")
+
+            sock.sendall(
+                b"RIGHT\r\n"
+            )
+
+            moved = wait_for_movement(
+                "RIGHT"
+            )
+
+            if moved:
+
+                print()
+                print("Reading position AFTER RIGHT movement...")
+
+                get_position(
+                    "AFTER_MOVE",
+                    "RIGHT"
+                )
+
+
+        # =================================================
+        # WRONG COMMAND
+        # =================================================
+
+        else:
+
+            print("Unknown command.")
+            print()
+            print("Please use:")
+            print("LEFT")
+            print("RIGHT")
+            print("POS")
+            print("QUIT")
+
+
+# =========================================================
+# CLOSE
+# =========================================================
+
+sock.close()
+
+print()
+print("======================================")
+print("CONNECTION CLOSED")
+print("======================================")
+print()
+
+print("YOUR CSV FILE:")
+print(csv_path)
