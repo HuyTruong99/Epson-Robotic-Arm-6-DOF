@@ -1,0 +1,646 @@
+
+
+import socket
+import csv
+import os
+from datetime import datetime
+from openai import OpenAI
+
+
+# ==========================================
+# OPENAI
+# ==========================================
+
+client = OpenAI()
+
+
+# ==========================================
+# ALLOWED ROBOT COMMANDS
+# ==========================================
+
+ALLOWED_COMMANDS = {
+    "LEFT",
+    "RIGHT",
+    "UP",
+    "DOWN",
+    "FORWARD",
+    "BACK",
+    "POS",
+    "STOP"
+}
+
+
+# ==========================================
+# LLM COMMAND INTERPRETER
+# ==========================================
+
+def get_robot_command(user_text):
+
+    response = client.responses.create(
+        model="gpt-5.6-sol",
+
+        input=f"""
+You are a command interpreter for an Epson robot arm.
+
+The robot supports ONLY these commands:
+
+LEFT
+RIGHT
+UP
+DOWN
+FORWARD
+BACK
+POS
+STOP
+
+Your job is to convert natural English into exactly ONE
+of those commands.
+
+Rules:
+
+- Return exactly ONE command.
+- Do not explain.
+- Do not output punctuation.
+- Do not output robot code.
+- Do not invent coordinates.
+- Do not invent commands.
+
+Interpret these meanings:
+
+LEFT
+= move robot toward the left
+
+RIGHT
+= move robot toward the right
+
+UP
+= raise the robot arm
+
+DOWN
+= lower the robot arm
+
+FORWARD
+= move forward
+
+BACK
+= move backward
+
+POS
+= tell me the current robot position
+
+STOP
+= instruction is unclear, unsupported, or unsafe
+
+
+Examples:
+
+User: move the arm left
+LEFT
+
+User: can you go a little to the left
+LEFT
+
+User: please move right
+RIGHT
+
+User: go to the right side
+RIGHT
+
+User: raise the arm
+UP
+
+User: move higher
+UP
+
+User: go upward
+UP
+
+User: lower the arm
+DOWN
+
+User: move down
+DOWN
+
+User: go forward
+FORWARD
+
+User: move toward the front
+FORWARD
+
+User: move backwards
+BACK
+
+User: come back
+BACK
+
+User: where is the robot?
+POS
+
+User: tell me your current position
+POS
+
+User: show X Y Z
+POS
+
+User: move somewhere random
+STOP
+
+User: hit that object
+STOP
+
+User instruction:
+{user_text}
+"""
+    )
+
+    return response.output_text.strip().upper()
+
+
+# ==========================================
+# ROBOT NETWORK SETTINGS
+# ==========================================
+
+ROBOT_IP = "192.168.1.6"
+ROBOT_PORT = 2000
+
+
+# ==========================================
+# CSV FILE
+# ==========================================
+
+SCRIPT_FOLDER = os.path.dirname(os.path.abspath(__file__))
+
+CSV_FILE = os.path.join(
+    SCRIPT_FOLDER,
+    "robot_position.csv"
+)
+
+
+def initialize_csv():
+
+    if not os.path.exists(CSV_FILE):
+
+        with open(
+            CSV_FILE,
+            "w",
+            newline="",
+            encoding="utf-8"
+        ) as file:
+
+            writer = csv.writer(file)
+
+            writer.writerow([
+                "timestamp",
+                "command",
+                "X",
+                "Y",
+                "Z",
+                "U",
+                "V",
+                "W"
+            ])
+
+
+def save_position(command, values):
+
+    if len(values) < 6:
+        return
+
+    with open(
+        CSV_FILE,
+        "a",
+        newline="",
+        encoding="utf-8"
+    ) as file:
+
+        writer = csv.writer(file)
+
+        writer.writerow([
+            datetime.now().isoformat(timespec="seconds"),
+            command,
+            values[0],
+            values[1],
+            values[2],
+            values[3],
+            values[4],
+            values[5]
+        ])
+
+    print("Position saved to CSV.")
+
+
+initialize_csv()
+
+
+# ==========================================
+# CONNECT TO ROBOT
+# ==========================================
+
+robot = socket.socket(
+    socket.AF_INET,
+    socket.SOCK_STREAM
+)
+
+robot.settimeout(10)
+
+
+print()
+print("Connecting to Epson robot...")
+print("Robot IP:", ROBOT_IP)
+print("Port:", ROBOT_PORT)
+print()
+
+
+try:
+
+    robot.connect(
+        (ROBOT_IP, ROBOT_PORT)
+    )
+
+except Exception as e:
+
+    print("================================")
+    print("COULD NOT CONNECT TO ROBOT")
+    print("================================")
+
+    print()
+    print("Check:")
+    print("1. Ethernet cable connected")
+    print("2. Laptop IP = 192.168.1.10")
+    print("3. Robot IP = 192.168.1.6")
+    print("4. RC+7 program is running")
+    print("5. RC+ says WAITING FOR PYTHON...")
+    print()
+
+    print("Error:", e)
+
+    raise SystemExit
+
+
+# Allow normal blocking communication
+robot.settimeout(None)
+
+
+# Make receiving CRLF lines easier
+robot_reader = robot.makefile(
+    "r",
+    encoding="utf-8",
+    newline="\r\n"
+)
+
+
+print("================================")
+print("ROBOT CONNECTED")
+print("LLM CONTROL READY")
+print("================================")
+
+print()
+print("You can say things like:")
+print()
+print("  move left")
+print("  please go right")
+print("  raise the arm")
+print("  move down")
+print("  go forward")
+print("  move backwards")
+print("  where are you?")
+print()
+print("Type EXIT to close Python.")
+print()
+print("CSV file:")
+print(CSV_FILE)
+
+
+# ==========================================
+# MAIN CONTROL LOOP
+# ==========================================
+
+while True:
+
+    print()
+    print("--------------------------------")
+
+    user_text = input(
+        "Tell the robot what to do: "
+    ).strip()
+
+
+    # ======================================
+    # EXIT PYTHON
+    # ======================================
+
+    if user_text.lower() in [
+        "exit",
+        "quit"
+    ]:
+
+        print("Closing program...")
+
+        break
+
+
+    if not user_text:
+
+        continue
+
+
+    # ======================================
+    # ASK LLM
+    # ======================================
+
+    try:
+
+        command = get_robot_command(
+            user_text
+        )
+
+    except Exception as e:
+
+        print()
+        print("LLM ERROR:")
+        print(e)
+
+        continue
+
+
+    print()
+    print("LLM understood:")
+    print(">>>", command)
+
+
+    # ======================================
+    # SAFETY WHITELIST
+    # ======================================
+
+    if command not in ALLOWED_COMMANDS:
+
+        print()
+        print("Command blocked.")
+        print(
+            "LLM returned an unsupported command."
+        )
+
+        continue
+
+
+    # ======================================
+    # STOP
+    # ======================================
+
+    if command == "STOP":
+
+        print()
+        print("STOP selected.")
+        print("No movement command sent.")
+
+        continue
+
+
+    # ======================================
+    # SEND COMMAND TO RC+7
+    # ======================================
+
+    try:
+
+        message = command + "\r\n"
+
+        robot.sendall(
+            message.encode("utf-8")
+        )
+
+        print()
+        print("Sent to RC+7:")
+        print(">>>", command)
+
+    except Exception as e:
+
+        print()
+        print("ROBOT COMMUNICATION ERROR:")
+        print(e)
+
+        break
+
+
+    # ======================================
+    # READ RC+7 RESPONSES
+    # ======================================
+
+    try:
+
+        while True:
+
+            line = robot_reader.readline()
+
+            if line == "":
+
+                print(
+                    "Robot disconnected."
+                )
+
+                break
+
+
+            text = line.strip()
+
+            if not text:
+
+                continue
+
+
+            print("RC+:", text)
+
+
+            # ==================================
+            # START
+            # ==================================
+
+            if text.startswith("START"):
+
+                print(
+                    "Robot movement started..."
+                )
+
+                continue
+
+
+            # ==================================
+            # DONE
+            #
+            # DONE,X,Y,Z,U,V,W
+            # ==================================
+
+            if text.startswith("DONE,"):
+
+                parts = text.split(",")
+
+                if len(parts) >= 7:
+
+                    values = parts[1:7]
+
+                    print()
+                    print(
+                        "Movement complete"
+                    )
+
+                    print(
+                        "X =", values[0]
+                    )
+
+                    print(
+                        "Y =", values[1]
+                    )
+
+                    print(
+                        "Z =", values[2]
+                    )
+
+                    save_position(
+                        command,
+                        values
+                    )
+
+                break
+
+
+            # ==================================
+            # POS
+            #
+            # POS,X,Y,Z,U,V,W
+            # ==================================
+
+            if text.startswith("POS,"):
+
+                parts = text.split(",")
+
+                if len(parts) >= 7:
+
+                    values = parts[1:7]
+
+                    print()
+                    print(
+                        "CURRENT ROBOT POSITION"
+                    )
+
+                    print(
+                        "X =", values[0]
+                    )
+
+                    print(
+                        "Y =", values[1]
+                    )
+
+                    print(
+                        "Z =", values[2]
+                    )
+
+                    print(
+                        "U =", values[3]
+                    )
+
+                    print(
+                        "V =", values[4]
+                    )
+
+                    print(
+                        "W =", values[5]
+                    )
+
+                    save_position(
+                        "POS",
+                        values
+                    )
+
+                break
+
+
+            # ==================================
+            # TARGET NOT REACHABLE
+            # ==================================
+
+            if text.startswith(
+                "TARGET_NOT_OK"
+            ):
+
+                print()
+                print(
+                    "Movement blocked by RC+7."
+                )
+
+                print(
+                    "Target is not reachable."
+                )
+
+                break
+
+
+            # ==================================
+            # UNKNOWN COMMAND
+            # ==================================
+
+            if text.startswith(
+                "UNKNOWN"
+            ):
+
+                print()
+                print(
+                    "RC+7 does not recognize command."
+                )
+
+                break
+
+
+            # ==================================
+            # ROBOT ERROR
+            # ==================================
+
+            if text.startswith(
+                "ERROR"
+            ):
+
+                print()
+                print(
+                    "RC+7 ROBOT ERROR"
+                )
+
+                break
+
+
+    except Exception as e:
+
+        print()
+        print("RESPONSE ERROR:")
+        print(e)
+
+
+# ==========================================
+# CLOSE EVERYTHING
+# ==========================================
+
+try:
+
+    robot_reader.close()
+
+except Exception:
+
+    pass
+
+
+try:
+
+    robot.close()
+
+except Exception:
+
+    pass
+
+
+print()
+print("Robot connection closed.")
+
+print(
+    "CSV saved at:"
+)
+
+print(
+    CSV_FILE
+)
