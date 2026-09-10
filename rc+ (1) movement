@@ -1,0 +1,343 @@
+Function main
+
+    String cmd$
+    Integer errCode
+
+    OnErr GoTo ErrorHandler
+
+
+    ' ==========================================
+    ' NETWORK SERVER
+    ' ==========================================
+
+    SetNet #201, "192.168.1.10", 2000, CRLF, NONE, 0
+
+    OpenNet #201 As Server
+
+    Print "WAITING FOR PYTHON..."
+
+    WaitNet #201
+
+    Print "PYTHON CONNECTED"
+
+
+    ' ==========================================
+    ' ROBOT SETTINGS
+    ' ==========================================
+
+    Motor On
+
+    ' Keep robot in LOW power while testing
+    Power Low
+
+    SpeedS 10
+    AccelS 20, 20
+
+    Print "================================"
+    Print "SERVER READY"
+    Print "================================"
+
+
+    ' ==========================================
+    ' MAIN LOOP
+    ' ==========================================
+
+    Do
+
+        If ChkNet(201) > 0 Then
+
+            Line Input #201, cmd$
+
+            Print ""
+            Print "Received: ", cmd$
+
+
+            ' ==================================
+            ' CURRENT POSITION
+            ' ==================================
+
+            If cmd$ = "POS" Then
+
+                P99 = Here
+
+                Print "CURRENT POSITION"
+                Print "X = ", CX(P99)
+                Print "Y = ", CY(P99)
+                Print "Z = ", CZ(P99)
+
+                Print #201, "POS,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+
+            ' ==================================
+            ' LEFT
+            ' X -100 MM
+            ' ==================================
+
+            ElseIf cmd$ = "LEFT" Then
+
+                P99 = Here
+
+                Print "================================"
+                Print "LEFT COMMAND"
+                Print "Current X = ", CX(P99)
+                Print "Target X = ", CX(P99) - 100
+                Print "================================"
+
+                If TargetOK(P99 -X(100)) Then
+
+                    Print "MOVING LEFT"
+
+                    Print #201, "START,LEFT,-100"
+
+                    Move P99 -X(100)
+
+                    P99 = Here
+
+                    Print "LEFT FINISHED"
+                    Print "New X = ", CX(P99)
+
+                    Print #201, "DONE,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+                Else
+
+                    Print "LEFT TARGET NOT OK"
+
+                    Print #201, "TARGET_NOT_OK,LEFT"
+
+                EndIf
+
+
+            ' ==================================
+            ' RIGHT
+            ' X +100 MM
+            ' ==================================
+
+            ElseIf cmd$ = "RIGHT" Then
+
+                P99 = Here
+
+                Print "================================"
+                Print "RIGHT COMMAND"
+                Print "Current X = ", CX(P99)
+                Print "Target X = ", CX(P99) + 100
+                Print "================================"
+
+                If TargetOK(P99 +X(100)) Then
+
+                    Print "MOVING RIGHT"
+
+                    Print #201, "START,RIGHT,100"
+
+                    Move P99 +X(100)
+
+                    P99 = Here
+
+                    Print "RIGHT FINISHED"
+                    Print "New X = ", CX(P99)
+
+                    Print #201, "DONE,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+                Else
+
+                    Print "RIGHT TARGET NOT OK"
+
+                    Print #201, "TARGET_NOT_OK,RIGHT"
+
+                EndIf
+
+
+            ' ==================================
+            ' UP
+            ' Z +50 MM
+            ' ==================================
+
+            ElseIf cmd$ = "UP" Then
+
+                P99 = Here
+
+                Print "================================"
+                Print "UP COMMAND"
+                Print "Current Z = ", CZ(P99)
+                Print "Target Z = ", CZ(P99) + 50
+                Print "================================"
+
+                If TargetOK(P99 +Z(50)) Then
+
+                    Print "MOVING UP"
+
+                    Print #201, "START,UP,50"
+
+                    Move P99 +Z(50)
+
+                    P99 = Here
+
+                    Print "UP FINISHED"
+                    Print "New Z = ", CZ(P99)
+
+                    Print #201, "DONE,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+                Else
+
+                    Print "UP TARGET NOT OK"
+
+                    Print #201, "TARGET_NOT_OK,UP"
+
+                EndIf
+
+
+            ' ==================================
+            ' DOWN
+            ' Z -50 MM
+            ' ==================================
+
+            ElseIf cmd$ = "DOWN" Then
+
+                P99 = Here
+
+                Print "================================"
+                Print "DOWN COMMAND"
+                Print "Current Z = ", CZ(P99)
+                Print "Target Z = ", CZ(P99) - 50
+                Print "================================"
+
+                If TargetOK(P99 -Z(50)) Then
+
+                    Print "MOVING DOWN"
+
+                    Print #201, "START,DOWN,-50"
+
+                    Move P99 -Z(50)
+
+                    P99 = Here
+
+                    Print "DOWN FINISHED"
+                    Print "New Z = ", CZ(P99)
+
+                    Print #201, "DONE,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+                Else
+
+                    Print "DOWN TARGET NOT OK"
+
+                    Print #201, "TARGET_NOT_OK,DOWN"
+
+                EndIf
+
+
+            ' ==================================
+            ' FORWARD
+            ' Y +50 MM
+            ' ==================================
+
+            ElseIf cmd$ = "FORWARD" Then
+
+                P99 = Here
+
+                Print "================================"
+                Print "FORWARD COMMAND"
+                Print "Current Y = ", CY(P99)
+                Print "Target Y = ", CY(P99) + 50
+                Print "================================"
+
+                If TargetOK(P99 +Y(50)) Then
+
+                    Print "MOVING FORWARD"
+
+                    Print #201, "START,FORWARD,50"
+
+                    Move P99 +Y(50)
+
+                    P99 = Here
+
+                    Print "FORWARD FINISHED"
+                    Print "New Y = ", CY(P99)
+
+                    Print #201, "DONE,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+                Else
+
+                    Print "FORWARD TARGET NOT OK"
+
+                    Print #201, "TARGET_NOT_OK,FORWARD"
+
+                EndIf
+
+
+            ' ==================================
+            ' BACK
+            ' Y -50 MM
+            ' ==================================
+
+            ElseIf cmd$ = "BACK" Then
+
+                P99 = Here
+
+                Print "================================"
+                Print "BACK COMMAND"
+                Print "Current Y = ", CY(P99)
+                Print "Target Y = ", CY(P99) - 50
+                Print "================================"
+
+                If TargetOK(P99 -Y(50)) Then
+
+                    Print "MOVING BACK"
+
+                    Print #201, "START,BACK,-50"
+
+                    Move P99 -Y(50)
+
+                    P99 = Here
+
+                    Print "BACK FINISHED"
+                    Print "New Y = ", CY(P99)
+
+                    Print #201, "DONE,", CX(P99), ",", CY(P99), ",", CZ(P99), ",", CU(P99), ",", CV(P99), ",", CW(P99)
+
+                Else
+
+                    Print "BACK TARGET NOT OK"
+
+                    Print #201, "TARGET_NOT_OK,BACK"
+
+                EndIf
+
+
+            ' ==================================
+            ' UNKNOWN COMMAND
+            ' ==================================
+
+            Else
+
+                Print "UNKNOWN COMMAND: ", cmd$
+
+                Print #201, "UNKNOWN,", cmd$
+
+            EndIf
+
+        EndIf
+
+        Wait 0.05
+
+    Loop
+
+
+    Exit Function
+
+
+' ==========================================
+' ERROR HANDLER
+' ==========================================
+
+ErrorHandler:
+
+    errCode = Err
+
+    Print "*******************************"
+    Print "ROBOT ERROR"
+    Print "Error Code = ", errCode
+    Print "Error Message = ", ErrMsg$(errCode)
+    Print "*******************************"
+
+    Print #201, "ERROR,", errCode, ",", ErrMsg$(errCode)
+
+Fend
