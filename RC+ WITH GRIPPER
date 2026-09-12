@@ -1,0 +1,241 @@
+Function main
+
+    String cmd$
+
+    ' ========================================
+    ' NETWORK SETUP
+    ' Laptop IP: 192.168.1.10
+    ' Robot:     192.168.1.6
+    ' Port:      2000
+    ' ========================================
+
+    SetNet #201, "192.168.1.10", 2000, CRLF, NONE, 0
+
+    OpenNet #201 As Server
+
+    Print "WAITING FOR PYTHON..."
+
+    WaitNet #201
+
+    Print "PYTHON CONNECTED"
+
+    Print #201, "SERVER READY"
+
+    ' ========================================
+    ' ROBOT SETUP
+    ' ========================================
+
+    Robot 1
+    Tool 1
+
+    Motor On
+
+    Power Low
+
+    SpeedS 10
+    AccelS 10, 10
+
+    Print "ROBOT READY"
+
+    ' ========================================
+    ' MAIN LOOP
+    ' ========================================
+
+    Do
+
+        ' ------------------------------------
+        ' Send current position continuously
+        ' ------------------------------------
+
+        P99 = Here
+
+        Print #201, "POS,", _
+            CX(P99), ",", _
+            CY(P99), ",", _
+            CZ(P99), ",", _
+            CU(P99), ",", _
+            CV(P99), ",", _
+            CW(P99)
+
+
+        ' ------------------------------------
+        ' Check command from Python
+        ' ------------------------------------
+
+        If ChkNet(201) > 0 Then
+
+            Line Input #201, cmd$
+
+            Print "Received: ", cmd$
+
+
+            ' ==================================
+            ' GET CURRENT POSITION
+            ' ==================================
+
+            If cmd$ = "POS" Then
+
+                P99 = Here
+
+                Print #201, "POS,", _
+                    CX(P99), ",", _
+                    CY(P99), ",", _
+                    CZ(P99), ",", _
+                    CU(P99), ",", _
+                    CV(P99), ",", _
+                    CW(P99)
+
+
+            ' ==================================
+            ' OPEN GRIPPER
+            ' ==================================
+
+            ElseIf cmd$ = "GRIP_OPEN" Then
+
+                Print "Opening gripper..."
+
+                Print #201, "GRIP_OPEN_START"
+
+                Hand_Off 1
+
+                Wait 0.5
+
+                Print "Gripper opened"
+
+                Print #201, "GRIP_OPENED"
+
+
+            ' ==================================
+            ' CLOSE GRIPPER
+            ' ==================================
+
+            ElseIf cmd$ = "GRIP_CLOSE" Then
+
+                Print "Closing gripper..."
+
+                Print #201, "GRIP_CLOSE_START"
+
+                Hand_On 1
+
+                Wait 0.5
+
+                Print "Gripper closed"
+
+                Print #201, "GRIP_CLOSED"
+
+
+            ' ==================================
+            ' MOVE +100 MM X
+            ' ==================================
+
+            ElseIf cmd$ = "MOVE_X_100" Then
+
+                Print #201, "MOVE_START"
+
+                P99 = Here
+
+                Print "Moving +100 mm X"
+
+                Move P99 +X(100)
+
+                Print "Movement finished"
+
+                P99 = Here
+
+                Print #201, "MOVE_DONE"
+
+                Print #201, "POS,", _
+                    CX(P99), ",", _
+                    CY(P99), ",", _
+                    CZ(P99), ",", _
+                    CU(P99), ",", _
+                    CV(P99), ",", _
+                    CW(P99)
+
+
+            ' ==================================
+            ' MOVE -100 MM X
+            ' ==================================
+
+            ElseIf cmd$ = "MOVE_X_MINUS_100" Then
+
+                Print #201, "MOVE_START"
+
+                P99 = Here
+
+                Print "Moving -100 mm X"
+
+                Move P99 -X(100)
+
+                Print "Movement finished"
+
+                P99 = Here
+
+                Print #201, "MOVE_DONE"
+
+                Print #201, "POS,", _
+                    CX(P99), ",", _
+                    CY(P99), ",", _
+                    CZ(P99), ",", _
+                    CU(P99), ",", _
+                    CV(P99), ",", _
+                    CW(P99)
+
+
+            ' ==================================
+            ' OPEN + MOVE + CLOSE TEST
+            ' ==================================
+
+            ElseIf cmd$ = "PICK_TEST" Then
+
+                Print #201, "PICK_TEST_START"
+
+                ' Open gripper
+                Hand_Off 1
+
+                Print #201, "GRIP_OPENED"
+
+                Wait 1
+
+
+                ' Move toward object
+                P99 = Here
+
+                Move P99 +X(100)
+
+                Print #201, "MOVE_DONE"
+
+                Wait 1
+
+
+                ' Close gripper
+                Hand_On 1
+
+                Print #201, "GRIP_CLOSED"
+
+                Wait 1
+
+                Print #201, "PICK_TEST_DONE"
+
+
+            ' ==================================
+            ' UNKNOWN COMMAND
+            ' ==================================
+
+            Else
+
+                Print "Unknown command: ", cmd$
+
+                Print #201, "UNKNOWN_COMMAND"
+
+            EndIf
+
+        EndIf
+
+
+        ' Send position about twice per second
+        Wait 0.5
+
+    Loop
+
+Fend
