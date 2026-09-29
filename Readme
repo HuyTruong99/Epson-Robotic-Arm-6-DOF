@@ -1,0 +1,128 @@
+Epson Robotic Arm 6-DOF – LLM Control, Vision, and Safety Supervisor
+
+Development repository for controlling an Epson 6-axis robot arm from Python over TCP/IP, carried out in Dr. Fiondella's lab at the University of Massachusetts Dartmouth.
+
+The project progresses from simple keyboard control, to natural-language control through an OpenAI LLM, to a runtime safety supervisor with virtual walls. It also includes early Intel RealSense depth-camera experiments.
+
+    Safety notice: This is research code. The software checks here are not certified safety functions. Run at low power, keep the emergency stop within reach, and never rely on the LLM for safety decisions.
+
+Project stages
+Stage	Python client	RC+ program	Description
+1	llm_test.py	–	Sanity check: the LLM converts one instruction into one allowed command
+2	llm_robot.py	RC+	LLM control with 2 directions (LEFT / RIGHT ±100 mm in X) + POS
+2b	movement (manual)	RC+ or rc+ (1) movement	Keyboard control (LEFT / RIGHT / POS) with CSV position logging
+3	llm_robot1	rc+ (1) movement	LLM control with 6 directions + POS, CSV logging
+4	runtime_safety_supervisor.py + safety_policy.json	RC+ WITH DYNAMIC RUNNING	Variable-distance moves, virtual-wall safety policy, live abort, detailed CSV metrics
+–	camera_test.py, camera_robot.py	–	Intel RealSense color + depth tests (not yet connected to the robot)
+
+    Python clients and RC+ programs use different protocols in different stages. Always run the RC+ program listed for the client you are using.
+
+Repository contents
+File	Language	Purpose
+llm_test.py	Python	Minimal OpenAI Responses API test
+llm_robot.py	Python	LLM → LEFT / RIGHT / POS / STOP, sends to RC+
+llm_robot1	Python	LLM → LEFT / RIGHT / UP / DOWN / FORWARD / BACK / POS / STOP, logs positions to CSV
+movement	Python	Manual keyboard console (LEFT, RIGHT, POS, QUIT) with before/after position logging
+runtime_safety_supervisor.py	Python	Safety supervisor (see the thesis repository for full documentation)
+safety_policy.json	JSON	Virtual-wall policy used by the supervisor
+camera_test.py	Python	RealSense stream with depth at the image center
+camera_robot.py	Python	RealSense stream split into LEFT / CENTER / RIGHT zones with center depth
+RC+	SPEL+	Server: POS, LEFT, RIGHT with TargetOK reachability check
+rc+ (1) movement	SPEL+	Server: POS + 6 directions with TargetOK
+RC+ WITH DYNAMIC RUNNING	SPEL+	Multitasking server for the safety supervisor (MOVE_X,<mm>, SUPERVISOR_STOP, ...)
+Requirements
+
+Hardware
+
+    Epson 6-axis robot with an RC+7 controller
+
+    Ethernet connection between the laptop and the controller
+
+    Intel RealSense depth camera (e.g. D435) for the camera scripts
+
+Software
+
+    Epson RC+ 7.x
+
+    Python 3.8+
+
+bash
+pip install openai            # LLM scripts
+pip install pyrealsense2 opencv-python numpy   # camera scripts
+
+OpenAI API key (LLM scripts only) – set it as an environment variable; never commit it:
+
+bash
+# macOS / Linux
+export OPENAI_API_KEY="sk-..."
+# Windows PowerShell
+$env:OPENAI_API_KEY="sk-..."
+
+The model name is set in each LLM script (model= in client.responses.create).
+
+Network (default values)
+Device	IP	Port
+Laptop (Python)	192.168.1.10	–
+RC+7 controller	192.168.1.6	2000
+Running
+
+    Open Epson RC+ 7, paste the RC+ program for your stage into Main.prg, build, and run. Wait for WAITING FOR PYTHON....
+
+    Run the matching Python client, for example:
+
+    bash
+    python llm_robot.py                         # with RC+
+    python llm_robot1                           # with "rc+ (1) movement"
+    python movement                             # with RC+ or "rc+ (1) movement"
+    python runtime_safety_supervisor.py         # with "RC+ WITH DYNAMIC RUNNING"
+
+    Type instructions at the prompt. Type exit / quit to close.
+
+Example LLM instructions (llm_robot1)
+You type	LLM returns	Robot action
+"can you go a little to the left"	LEFT	−100 mm X
+"go to the right side"	RIGHT	+100 mm X
+"raise the arm"	UP	+50 mm Z
+"lower the arm"	DOWN	−50 mm Z
+"move toward the front"	FORWARD	+50 mm Y
+"come back"	BACK	−50 mm Y
+"where is the robot?"	POS	Report position
+"hit that object"	STOP	Nothing is sent
+
+Any LLM output outside the allowed list is blocked before reaching the robot. In these scripts STOP means "do not send a command"; it does not halt a motion in progress.
+Protocols
+Stages 2–3 (RC+, rc+ (1) movement)
+Python → RC+	RC+ → Python
+POS	POS,x,y,z,u,v,w
+LEFT, RIGHT (±100 mm X)	START,<dir>,<mm> then DONE,x,y,z,u,v,w
+UP, DOWN (±50 mm Z) – 6-direction program only	TARGET_NOT_OK,<dir> if unreachable
+FORWARD, BACK (±50 mm Y) – 6-direction program only	UNKNOWN,<cmd> / ERROR,<code>,<message>
+
+Moves are linear (Move), relative to Here, at Power Low, SpeedS 10, AccelS 20, 20. TargetOK checks reachability before each move.
+Stage 4 (RC+ WITH DYNAMIC RUNNING)
+
+Uses MOVE_X,<mm> / MOVE_Y,<mm> / MOVE_Z,<mm>, GET_POSITION, GET_STATE, SUPERVISOR_STOP, and RESET_SUPERVISOR_HOLD, with position streamed at ~10 Hz and a separate abort task. See the full protocol and policy documentation in Master-Thesis-at-UmassD.
+CSV output
+Script	File	Columns
+llm_robot1	robot_position.csv (script folder)	timestamp, command, X, Y, Z, U, V, W
+movement	~/robot_position.csv (new timestamped file if locked)	timestamp, event, command, X, Y, Z, U, V, W
+runtime_safety_supervisor.py	robot_position.csv (script folder)	Full trial, safety-state, and stop-metric log
+Known limitations
+
+    The LLM clients and the safety supervisor are not yet combined; LLM commands are checked only by the allowed-command list and TargetOK reachability.
+
+    The stage 2–3 RC+ programs are single-task and cannot receive a stop while a move is in progress.
+
+    An error in RC+ / rc+ (1) movement ends the server program; restart it in RC+.
+
+    The TCP link has no authentication or encryption.
+
+    Camera scripts are standalone and do not yet send commands to the robot.
+
+Related repository
+
+    Master-Thesis-at-UmassD – final thesis version of the runtime safety supervisor.
+
+Author
+
+Huy Truong – University of Massachusetts Dartmouth
