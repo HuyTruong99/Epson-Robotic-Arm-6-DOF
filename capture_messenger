@@ -1,0 +1,57 @@
+import ctypes
+ctypes.windll.shcore.SetProcessDpiAwareness(2)   # fixes Windows display-scaling offset
+
+import time, mss, numpy as np, cv2
+
+FREEZE_SECONDS = 1.0     # feed is "stale" if the image doesn't change for this long
+CHANGE_THRESHOLD = 2.0   # average pixel difference that counts as "changed"
+
+with mss.mss() as sct:
+    # Step 1: select the video area once with your mouse
+    full = cv2.cvtColor(np.array(sct.grab(sct.monitors[1])), cv2.COLOR_BGRA2BGR)
+    x, y, w, h = cv2.selectROI("Drag a box around the glasses video, then press ENTER", full)
+    cv2.destroyAllWindows()
+    REGION = {"left": int(x), "top": int(y), "width": int(w), "height": int(h)}
+    print("Capturing region:", REGION)
+
+    prev_gray = None
+    last_change = time.time()
+    last_ts = time.time()
+    fps = 0.0
+
+    # Step 2: capture continuously
+    while True:
+        frame = cv2.cvtColor(np.array(sct.grab(REGION)), cv2.COLOR_BGRA2BGR)
+        ts = time.time()
+
+        # FPS (smoothed)
+        dt = ts - last_ts
+        last_ts = ts
+        if dt > 0:
+            fps = 0.9 * fps + 0.1 * (1.0 / dt)
+
+        # Freeze detection: has the image changed recently?
+        gray = cv2.cvtColor(cv2.resize(frame, (160, 120)), cv2.COLOR_BGR2GRAY)
+        if prev_gray is not None:
+            diff = cv2.absdiff(gray, prev_gray).mean()
+            if diff > CHANGE_THRESHOLD:
+                last_change = ts
+        prev_gray = gray
+        stale = (ts - last_change) > FREEZE_SECONDS
+
+        # → later: run YOLO / LLM here, ONLY when not stale
+        # if not stale:
+        #     results = model(frame)
+
+        # On-screen status
+        status = "STALE - do not use" if stale else "LIVE"
+        color = (0, 0, 255) if stale else (0, 255, 0)
+        preview = frame.copy()
+        cv2.putText(preview, f"{status}  FPS: {fps:.1f}", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        cv2.imshow("glasses (Messenger)", preview)
+
+        if cv2.waitKey(1) == 27:   # Esc to quit
+            break
+
+cv2.destroyAllWindows()
